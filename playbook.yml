@@ -1,0 +1,104 @@
+---
+- name: Manage Nexus Node
+  hosts: nexus_nodes
+  gather_facts: true
+
+  vars:
+    container_name: "nexus"
+    docker_image: "nexusxyz/nexus-cli:latest"
+
+  tasks:
+    # ======================================================
+    # == ТЕГ: install - Установка зависимостей
+    # ======================================================
+    - name: Ensure dependencies are installed (for Docker)
+      tags: [install]
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+        state: present
+        update_cache: true
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Create directory for Docker GPG key
+      tags: [install]
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Add Docker's official GPG key
+      tags: [install]
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+        force: true
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Add Docker repository
+      tags: [install]
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_facts['lsb']['codename'] }} stable"
+        state: present
+      when: ansible_facts['os_family'] == "Debian"
+
+    - name: Install Docker Engine and Python SDK for Docker
+      tags: [install]
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+          - python3-docker
+        state: present
+        update_cache: true
+      when: ansible_facts['os_family'] == "Debian"
+
+    # ======================================================
+    # == ТЕГ: update, start - Запуск/обновление контейнера
+    # ======================================================
+    - name: Pull the latest nexus-cli image
+      tags: [start, update]
+      community.docker.docker_image:
+        name: "{{ docker_image }}"
+        source: pull
+
+    - name: Create and start the nexus container
+      tags: [start, update]
+      community.docker.docker_container:
+        name: "{{ container_name }}"
+        image: "{{ docker_image }}"
+        state: started
+        init: true
+        detach: true # -d
+        interactive: true # -i
+        tty: true # -t
+        command: "start --node-id {{ node_id }}"
+        restart_policy: always
+
+    # ======================================================
+    # == ТЕГ: stop - Остановка и удаление контейнера
+    # ======================================================
+    - name: Stop and remove the nexus container
+      tags: [stop]
+      community.docker.docker_container:
+        name: "{{ container_name }}"
+        state: absent
+
+    # ======================================================
+    # == ТЕГ: attach - Подключение к интерфейсу
+    # ======================================================
+    - name: Show command to attach to the container
+      tags: [attach]
+      ansible.builtin.debug:
+        msg:
+          - "To attach to the container's interface, run this command on your local machine:"
+          - "ssh {{ ansible_user }}@{{ inventory_hostname }} -t 'docker attach {{ container_name }}'"
+          - "IMPORTANT: To detach without stopping the container, press Ctrl+P, then Ctrl+Q"
+      changed_when: false
