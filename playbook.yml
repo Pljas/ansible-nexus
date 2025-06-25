@@ -76,11 +76,13 @@
         image: "{{ docker_image }}"
         state: started
         init: true
-        detach: true # -d
-        interactive: true # -i
-        tty: true # -t
+        detach: true
+        interactive: true
+        tty: true
         command: "start --node-id {{ node_id }}"
         restart_policy: always
+        memory: "{{ memory | default(omit) }}"
+        cpus: "{{ cpus | default(omit) }}"
 
     # ======================================================
     # == ТЕГ: stop - Остановка и удаление контейнера
