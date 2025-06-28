@@ -5,7 +5,8 @@
 
   vars:
     container_name: "nexus"
-    docker_image: "nexusxyz/nexus-cli:latest"
+    nexus_version: "latest"
+    docker_image: "nexusxyz/nexus-cli:{{ nexus_version }}"
 
   tasks:
     # ======================================================
@@ -63,18 +64,13 @@
     # ======================================================
     # == ТЕГ: update, start - Запуск/обновление контейнера
     # ======================================================
-    - name: Pull the latest nexus-cli image
-      tags: [start, update]
-      community.docker.docker_image:
-        name: "{{ docker_image }}"
-        source: pull
-
     - name: Create and start the nexus container
       tags: [start, update]
       community.docker.docker_container:
         name: "{{ container_name }}"
         image: "{{ docker_image }}"
         state: started
+        pull: true
         init: true
         detach: true
         interactive: true
