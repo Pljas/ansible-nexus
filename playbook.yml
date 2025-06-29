@@ -2,6 +2,7 @@
 - name: Manage Nexus Node
   hosts: nexus_nodes
   gather_facts: true
+  become: true
 
   vars:
     container_name: "nexus"
@@ -9,6 +10,52 @@
     docker_image: "nexusxyz/nexus-cli:{{ nexus_version }}"
 
   tasks:
+    # ======================================================
+    # == ТЕГ: system - Подготовка системы
+    # ======================================================
+    - name: Проверка и управление файлом подкачки
+      tags: [system]
+      block:
+        - name: Расчет необходимого размера файла подкачки
+          ansible.builtin.set_fact:
+            # Цель: общий объем памяти (RAM + Swap) должен быть 16 ГБ (16384 МБ)
+            required_swap_mb: "{{ 16384 - ansible_facts['memtotal_mb'] }}"
+
+        - name: Создание файла подкачки
+          ansible.builtin.command: fallocate -l {{ required_swap_mb }}M /swapfile
+          args:
+            creates: /swapfile
+          when: (ansible_facts['memtotal_mb'] + ansible_facts['swaptotal_mb']) < 16384
+
+        - name: Настройка файла подкачки
+          community.general.filesystem:
+            fstype: swap
+            dev: /swapfile
+          when: (ansible_facts['memtotal_mb'] + ansible_facts['swaptotal_mb']) < 16384
+
+        - name: Установка правильных разрешений для файла подкачки
+          ansible.builtin.file:
+            path: /swapfile
+            owner: root
+            group: root
+            mode: '0600'
+          when: (ansible_facts['memtotal_mb'] + ansible_facts['swaptotal_mb']) < 16384
+
+        - name: Включение файла подкачки
+          ansible.builtin.command: swapon /swapfile
+          when: "'/swapfile' not in (ansible_swaps | default([])) and (ansible_facts['memtotal_mb'] + ansible_facts['swaptotal_mb']) < 16384"
+
+        - name: Добавление файла подкачки в /etc/fstab
+          ansible.posix.mount:
+            name: none
+            src: /swapfile
+            fstype: swap
+            opts: defaults
+            state: present
+          when: (ansible_facts['memtotal_mb'] + ansible_facts['swaptotal_mb']) < 16384
+
+      when: ansible_facts['memtotal_mb'] < 16384
+
     # ======================================================
     # == ТЕГ: install - Установка зависимостей
     # ======================================================

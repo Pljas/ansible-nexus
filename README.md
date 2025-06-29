@@ -1,253 +1,137 @@
-# Ansible Nexus Node Management
+# Управление нодами Nexus с помощью Ansible
 
-Этот проект позволяет автоматизировать управление Nexus нодами через Ansible.
+Этот проект предоставляет автоматизированные сценарии (плейбуки) Ansible для упрощения развертывания, настройки и управления нодами Nexus.
+
+## Ключевые возможности
+
+- **Подготовка системы**: Автоматически настраивает файл подкачки (swap) для обеспечения стабильной работы ноды.
+- **Установка зависимостей**: Устанавливает Docker и все необходимые компоненты.
+- **Управление контейнером**: Позволяет запускать, останавливать, обновлять и удалять контейнер с нодой Nexus.
+- **Гибкая настройка**: Легко настраивается через файл инвентаризации для работы с несколькими нодами.
 
 ## Требования
 
 ### 1. Установка Python
 
 **Linux (Ubuntu/Debian):**
-
 ```bash
-sudo apt update
-sudo apt install python3 python3-pip
+sudo apt update && sudo apt install -y python3 python3-pip
 ```
 
-**macOS:**
-
+**macOS (через Homebrew):**
 ```bash
-# Через Homebrew
 brew install python3
 ```
 
 ### 2. Установка Ansible
 
-После установки Python установите Ansible:
-
 ```bash
 pip3 install ansible
 ```
+Для получения более подробной информации обратитесь к [официальной документации по установке Ansible](https://docs.ansible.com/ansible/latest/installation_guide/index.html).
 
-Подробная документация по установке: <https://docs.ansible.com/ansible/latest/installation_guide/index.html>
+### 3. Установка коллекций Ansible
 
-## Настройка SSH ключей
+Проект использует коллекции Ansible для управления Docker и системными компонентами. Установите их с помощью файла `requirements.yml`:
 
-### Создание SSH ключа ed25519
+```bash
+ansible-galaxy collection install -r requirements.yml
+```
 
-1. Создайте новый SSH ключ:
+## Настройка
 
+### 1. SSH-ключи
+
+Для безопасного подключения к серверам рекомендуется использовать SSH-ключи.
+
+**Создание ключа:**
 ```bash
 ssh-keygen -t ed25519 -C "your_email@example.com"
 ```
 
-2. При запросе пути к файлу нажмите Enter (будет использован путь по умолчанию `~/.ssh/id_ed25519`)
-
-3. Введите пароль для ключа (рекомендуется) или оставьте пустым
-
-### Добавление ключа на сервер
-
-**Способ 1: Через ssh-copy-id (Linux/macOS)**
-
+**Копирование ключа на сервер:**
 ```bash
 ssh-copy-id -i ~/.ssh/id_ed25519.pub user@server_ip
 ```
 
-**Способ 2: Ручное копирование**
+### 2. Файл инвентаризации (`inventory`)
 
-```bash
-# Скопируйте содержимое публичного ключа
-cat ~/.ssh/id_ed25519.pub
-
-# Подключитесь к серверу и добавьте ключ
-ssh user@server_ip
-mkdir -p ~/.ssh
-echo "ВСТАВЬТЕ_СОДЕРЖИМОЕ_ПУБЛИЧНОГО_КЛЮЧА" >> ~/.ssh/authorized_keys
-chmod 600 ~/.ssh/authorized_keys
-chmod 700 ~/.ssh
-```
-
-## Настройка проекта
-
-### 1. Редактирование inventory файла
-
-Откройте файл `inventory` и замените параметры:
+Откройте файл `inventory` и укажите данные для подключения к вашим серверам.
 
 ```ini
 [nexus_nodes]
 # Замените на ваши данные:
-192.168.1.100 ansible_user=root node_id="ваш_node_id" ansible_ssh_private_key_file=~/.ssh/id_ed25519
+# 192.168.1.100 ansible_user=root node_id="ВАШ_NODE_ID" ansible_ssh_private_key_file=~/.ssh/id_ed25519
+
+# Пример с ограничением ресурсов:
+# 192.168.1.101 ansible_user=root node_id="ДРУГОЙ_ID" memory="1g" cpus="0.5"
 ```
 
-Параметры:
+**Параметры:**
+- `192.168.1.100`: IP-адрес вашего сервера.
+- `ansible_user`: Пользователь для подключения (`root`, `ubuntu` и т.д.).
+- `node_id`: Уникальный идентификатор вашей ноды Nexus.
+- `ansible_ssh_private_key_file`: Путь к вашему приватному SSH-ключу.
+- `memory` (опционально): Ограничение по памяти (например, "1g", "512m").
+- `cpus` (опционально): Ограничение по CPU (например, "1.0", "0.5").
 
-- `192.168.1.100` - IP адрес вашего сервера
-- `ansible_user=root` - пользователь для подключения (может быть `ubuntu`, `admin` и т.д.)
-- `node_id="ваш_node_id"` - ID вашей Nexus ноды
-- `ansible_ssh_private_key_file` - путь к приватному SSH ключу
+## Использование
 
-### 2. Исправление прав доступа к директории
-
-Если вы получаете предупреждение о небезопасных правах доступа:
-
-```bash
-[WARNING]: Ansible is being run in a world writable directory
-```
-
-Исправьте права доступа:
-
-**Linux/macOS/WSL:**
-
-```bash
-chmod o-w ~/ansible-nexus
-# или для всего проекта:
-find . -type d -exec chmod 755 {} \;
-find . -type f -exec chmod 644 {} \;
-```
-
-## Запуск плейбука
+Плейбук разделен на теги для гранулярного управления задачами.
 
 ### Доступные теги
 
-Плейбук содержит следующие теги:
+- `system`: Подготовка системы (настройка файла подкачки).
+- `install`: Установка Docker и зависимостей.
+- `start`: Запуск контейнера Nexus.
+- `update`: Обновление и перезапуск контейнера.
+- `stop`: Остановка и удаление контейнера.
+- `attach`: Отображение команды для подключения к интерфейсу контейнера.
 
-- `install` - Установка Docker и зависимостей
-- `start` - Запуск Nexus контейнера
-- `update` - Обновление и перезапуск контейнера
-- `stop` - Остановка и удаление контейнера
-- `attach` - Показать команду для подключения к контейнеру
-
-### Команды запуска
+### Команды
 
 **Полная установка и запуск:**
-
 ```bash
-ansible-playbook playbook.yml --tags "install,start"
+ansible-playbook playbook.yml --tags "system,install,start"
 ```
 
-**Только установка зависимостей:**
-
-```bash
-ansible-playbook playbook.yml --tags "install"
-```
-
-**Только запуск контейнера:**
-
-```bash
-ansible-playbook playbook.yml --tags "start"
-```
-
-**Обновление контейнера до последней версии:**
-
+**Обновление контейнера:**
 ```bash
 ansible-playbook playbook.yml --tags "update"
 ```
 
-**Обновление до конкретной версии (откат):**
-
-Вы можете обновить контейнер до определенной версии, указав ее при запуске. Это полезно для отката на более старую, стабильную версию.
-
+**Обновление до конкретной версии:**
 ```bash
-ansible-playbook playbook.yml --tags "update"
+ansible-playbook playbook.yml --tags "update" --extra-vars "nexus_version=1.2.3"
 ```
 
-Замените `1.2.3` на нужный тег версии образа.
-
-**Остановка контейнера:**
-
+**Остановка и удаление контейнера:**
 ```bash
 ansible-playbook playbook.yml --tags "stop"
 ```
 
-**Показать команду для подключения:**
+### Опции подключения
 
-```bash
-ansible-playbook playbook.yml --tags "attach"
-```
+- `--ask-pass`: Запрос пароля для SSH-подключения (если не используются ключи).
+- `--ask-become-pass`: Запрос пароля для повышения привилегий (`sudo`).
 
-### Запуск без SSH ключей
+## Устранение неисправностей
 
-Если SSH ключи не настроены, используйте флаг `--ask-pass`:
-
-```bash
-ansible-playbook playbook.yml --tags "install,start" --ask-pass
-```
-
-Вам будет предложено ввести пароль для подключения к серверу.
-
-### Запуск с sudo паролем
-
-Если пользователь требует sudo пароль:
-
-```bash
-ansible-playbook playbook.yml --tags "install,start" --ask-become-pass
-```
-
-### Комбинированные флаги
-
-```bash
-# Если нужны и SSH пароль, и sudo пароль
-ansible-playbook playbook.yml --tags "install,start" --ask-pass --ask-become-pass
-```
-
-## Подключение к контейнеру
-
-После запуска контейнера вы можете подключиться к его интерфейсу:
-
-```bash
-ssh user@server_ip -t 'docker attach nexus'
-```
-
-**Важно:** Для отключения от контейнера без его остановки используйте комбинацию клавиш `Ctrl+P`, затем `Ctrl+Q`.
-
-## Устранение проблем
-
-### Проблема с правами доступа
-
-```
-[WARNING]: Ansible is being run in a world writable directory
-```
-
+### Ошибка: `couldn't resolve module/action`
+Это означает, что необходимые коллекции Ansible не установлены.
 **Решение:**
-
 ```bash
-chmod o-w /path/to/ansible-nexus
+ansible-galaxy collection install -r requirements.yml
 ```
 
-### Проблема с inventory
+### Ошибка: `'ansible_swaps' is undefined`
+Возникает, если на сервере отсутствует файл подкачки. Плейбук уже содержит логику для обработки этого случая, но если ошибка все же появляется, убедитесь, что у вас последняя версия плейбука.
 
-```
-[WARNING]: provided hosts list is empty, only localhost is available
-```
-
+### Предупреждение: `world writable directory`
+Проблема с правами доступа к директории проекта.
 **Решение:**
-
-1. Проверьте права доступа к директории
-2. Убедитесь, что файл `ansible.cfg` существует
-3. Проверьте синтаксис файла `inventory`
-
-### Проблема с подключением
-
-```
-FATAL: UNREACHABLE
-```
-
-**Решение:**
-
-1. Проверьте IP адрес сервера
-2. Убедитесь, что SSH ключи настроены правильно
-3. Проверьте, что сервер доступен: `ping server_ip`
-4. Попробуйте подключиться вручную: `ssh user@server_ip`
-
-### Проблема с Docker модулями
-
-```
-ERROR! couldn't resolve module/action 'community.docker.docker_container'
-```
-
-**Решение:**
-
 ```bash
-ansible-galaxy collection install community.docker
+chmod o-w /path/to/your/project
 ```
 
 ## Структура проекта
@@ -255,17 +139,8 @@ ansible-galaxy collection install community.docker
 ```
 ansible-nexus/
 ├── ansible.cfg          # Конфигурация Ansible
-├── inventory            # Список серверов
+├── inventory            # Список серверов и их переменные
 ├── playbook.yml         # Основной плейбук
-└── README.md           # Эта документация
+├── requirements.yml     # Список коллекций Ansible
+└── README.md            # Эта документация
 ```
-
-## Дополнительная информация
-
-- [Документация Ansible](https://docs.ansible.com/)
-- [Документация Docker](https://docs.docker.com/)
-- [Nexus CLI GitHub](https://github.com/nexusxyz/nexus-cli)
-
----
-
-**Примечание:** Этот проект предназначен для управления Nexus нодами. Убедитесь, что у вас есть действительный `node_id` перед запуском.
