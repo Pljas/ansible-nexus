@@ -122,7 +122,7 @@
         detach: true
         interactive: true
         tty: true
-        command: "start --node-id {{ node_id }}"
+        command: "start --node-id {{ node_id }}{% if max_threads is defined %} --max-threads {{ max_threads }}{% endif %}"
         restart_policy: always
         memory: "{{ memory | default(omit) }}"
         cpus: "{{ cpus | default(omit) }}"

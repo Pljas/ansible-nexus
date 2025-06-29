@@ -13,5 +13,8 @@
 #
 # 3. С ограничением только по памяти (1GB):
 # 192.168.1.102 ansible_user=root node_id="ТРЕТИЙ_ID" ansible_ssh_private_key_file=~/.ssh/id_ed25519 memory="1g"
+#
+# 4. С указанием количества потоков для прувера (6 потоков):
+# 192.168.1.103 ansible_user=root node_id="ЧЕТВЕРТЫЙ_ID" ansible_ssh_private_key_file=~/.ssh/id_ed25519 max_threads=6
 
 193.233.16.234 ansible_user=root node_id=" ..." ansible_ssh_private_key_file=~/.ssh/id_ed25519
