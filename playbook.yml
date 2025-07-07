@@ -8,105 +8,160 @@
     container_name: "nexus"
     nexus_version: "latest"
     docker_image: "nexusxyz/nexus-cli:{{ nexus_version }}"
+    min_memory_mb: 16384
+    swap_file_path: "/swapfile"
+
+  pre_tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - node_id is defined
+          - node_id | string | length > 0
+        fail_msg: "node_id variable is required and cannot be empty"
+      tags: [always]
+
+    - name: Validate max_threads parameter
+      ansible.builtin.assert:
+        that:
+          - max_threads is not defined or (max_threads | int > 0 and max_threads | int <= ansible_processor_vcpus)
+          - max_threads is not defined or max_threads | int == max_threads | float
+        fail_msg: "max_threads must be a positive integer between 1 and {{ ansible_processor_vcpus }} (available CPUs)"
+      when: max_threads is defined
+      tags: [always]
+
+    - name: Set optimal max_threads if not defined
+      ansible.builtin.set_fact:
+        max_threads: "{{ [ansible_processor_vcpus, 4] | min }}"
+      when: max_threads is not defined
+      tags: [always]
 
   tasks:
     # ======================================================
     # == ТЕГ: system - Подготовка системы
     # ======================================================
     - name: Проверка и управление файлом подкачки
-      when: ansible_facts['memtotal_mb'] < 16384
       tags: [system]
+      when: (ansible_facts['memtotal_mb'] + ansible_facts['swaptotal_mb']) < min_memory_mb
       block:
         - name: Расчет необходимого размера файла подкачки
           ansible.builtin.set_fact:
-            required_swap_mb: "{{ 16384 - ansible_facts['memtotal_mb'] }}"
+            required_swap_mb: "{{ min_memory_mb - (ansible_facts['memtotal_mb'] + ansible_facts['swaptotal_mb']) }}"
+
+        - name: Проверка существования файла подкачки
+          ansible.builtin.stat:
+            path: "{{ swap_file_path }}"
+          register: swapfile_stat
 
         - name: Создание файла подкачки
-          ansible.builtin.command: fallocate -l {{ required_swap_mb }}M /swapfile
-          args:
-            creates: /swapfile
-          when: (ansible_facts['memtotal_mb'] + ansible_facts['swaptotal_mb']) < 16384
+          ansible.builtin.command: fallocate -l {{ required_swap_mb }}M {{ swap_file_path }}
+          when: not swapfile_stat.stat.exists
+          changed_when: true
+
+        - name: Установка правильных разрешений для файла подкачки
+          ansible.builtin.file:
+            path: "{{ swap_file_path }}"
+            owner: root
+            group: root
+            mode: '0600'
+          when: not swapfile_stat.stat.exists
 
         - name: Настройка файла подкачки
           community.general.filesystem:
             fstype: swap
-            dev: /swapfile
-          when: (ansible_facts['memtotal_mb'] + ansible_facts['swaptotal_mb']) < 16384
+            dev: "{{ swap_file_path }}"
+          when: not swapfile_stat.stat.exists
 
-        - name: Установка правильных разрешений для файла подкачки
-          ansible.builtin.file:
-            path: /swapfile
-            owner: root
-            group: root
-            mode: '0600'
-          when: (ansible_facts['memtotal_mb'] + ansible_facts['swaptotal_mb']) < 16384
-
-        - name: Включение файла подкачки
-          ansible.builtin.command: swapon /swapfile
+        - name: Проверка активности swap файла
+          ansible.builtin.command: swapon --show=NAME --noheadings
+          register: active_swaps
           changed_when: false
           failed_when: false
-          when: "'/swapfile' not in (ansible_swaps | default([])) and (ansible_facts['memtotal_mb'] + ansible_facts['swaptotal_mb']) < 16384"
+
+        - name: Включение файла подкачки
+          ansible.builtin.command: swapon {{ swap_file_path }}
+          when: "swap_file_path not in active_swaps.stdout"
+          changed_when: true
 
         - name: Добавление файла подкачки в /etc/fstab
           ansible.posix.mount:
             name: none
-            src: /swapfile
+            src: "{{ swap_file_path }}"
             fstype: swap
             opts: defaults
             state: present
-          when: (ansible_facts['memtotal_mb'] + ansible_facts['swaptotal_mb']) < 16384
 
     # ======================================================
     # == ТЕГ: install - Установка зависимостей
     # ======================================================
-    - name: Ensure dependencies are installed (for Docker)
-      ansible.builtin.apt:
-        name:
-          - ca-certificates
-          - curl
-          - gnupg
-        state: present
-        update_cache: true
+    - name: Install Docker (Debian/Ubuntu)
       when: ansible_facts['os_family'] == "Debian"
       tags: [install]
+      block:
+        - name: Check if Docker is already installed
+          ansible.builtin.command: docker --version
+          register: docker_check
+          failed_when: false
+          changed_when: false
 
-    - name: Create directory for Docker GPG key
-      ansible.builtin.file:
-        path: /etc/apt/keyrings
-        state: directory
-        mode: "0755"
-      when: ansible_facts['os_family'] == "Debian"
-      tags: [install]
+        - name: Install Docker dependencies
+          ansible.builtin.apt:
+            name:
+              - ca-certificates
+              - curl
+              - gnupg
+            state: present
+            update_cache: true
+          when: docker_check.rc != 0
 
-    - name: Add Docker's official GPG key
-      ansible.builtin.get_url:
-        url: https://download.docker.com/linux/ubuntu/gpg
-        dest: /etc/apt/keyrings/docker.asc
-        mode: "0644"
-        force: true
-      when: ansible_facts['os_family'] == "Debian"
-      tags: [install]
+        - name: Create directory for Docker GPG key
+          ansible.builtin.file:
+            path: /etc/apt/keyrings
+            state: directory
+            mode: "0755"
+          when: docker_check.rc != 0
 
-    - name: Add Docker repository
-      ansible.builtin.apt_repository:
-        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_facts['lsb']['codename'] }} stable"
-        state: present
-      when: ansible_facts['os_family'] == "Debian"
-      tags: [install]
+        - name: Add Docker's official GPG key
+          ansible.builtin.get_url:
+            url: https://download.docker.com/linux/ubuntu/gpg
+            dest: /etc/apt/keyrings/docker.asc
+            mode: "0644"
+            force: true
+          when: docker_check.rc != 0
 
-    - name: Install Docker Engine and Python SDK for Docker
-      ansible.builtin.apt:
-        name:
-          - docker-ce
-          - docker-ce-cli
-          - containerd.io
-          - docker-buildx-plugin
-          - docker-compose-plugin
-          - python3-docker
-        state: present
-        update_cache: true
-      when: ansible_facts['os_family'] == "Debian"
-      tags: [install]
+        - name: Add Docker repository
+          ansible.builtin.apt_repository:
+            repo: >
+              deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc]
+              https://download.docker.com/linux/ubuntu
+              {{ ansible_facts['lsb']['codename'] }} stable
+            state: present
+          when: docker_check.rc != 0
+
+        - name: Install Docker Engine and Python SDK
+          ansible.builtin.apt:
+            name:
+              - docker-ce
+              - docker-ce-cli
+              - containerd.io
+              - docker-buildx-plugin
+              - docker-compose-plugin
+              - python3-docker
+            state: present
+            update_cache: true
+          when: docker_check.rc != 0
+
+        - name: Start and enable Docker service
+          ansible.builtin.systemd:
+            name: docker
+            state: started
+            enabled: true
+
+        - name: Add user to docker group
+          ansible.builtin.user:
+            name: "{{ ansible_user }}"
+            groups: docker
+            append: true
+          when: ansible_user != 'root'
 
     # ======================================================
     # == ТЕГ: update, start - Запуск/обновление контейнера
@@ -121,10 +176,22 @@
         detach: true
         interactive: true
         tty: true
-        command: "start --node-id {{ node_id }}{% if max_threads is defined %} --max-threads {{ max_threads }}{% endif %}"
+        command: >
+          start --node-id {{ node_id }}
+          {% if max_threads is defined %}--max-threads {{ max_threads }}{% endif %}
         restart_policy: always
         memory: "{{ memory | default(omit) }}"
         cpus: "{{ cpus | default(omit) }}"
+        healthcheck:
+          test: ["CMD-SHELL", "pgrep -f nexus >/dev/null || exit 1"]
+          interval: 15s
+          timeout: 10s
+          retries: 5
+          start_period: 120s
+        labels:
+          managed_by: ansible
+          service: nexus
+      register: container_result
       tags: [start, update]
 
     # ======================================================
@@ -147,3 +214,5 @@
           - "IMPORTANT: To detach without stopping the container, press Ctrl+P, then Ctrl+Q"
       changed_when: false
       tags: [attach]
+
+  handlers: []
