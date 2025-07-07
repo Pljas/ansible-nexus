@@ -14,11 +14,11 @@
     # == ТЕГ: system - Подготовка системы
     # ======================================================
     - name: Проверка и управление файлом подкачки
+      when: ansible_facts['memtotal_mb'] < 16384
       tags: [system]
       block:
         - name: Расчет необходимого размера файла подкачки
           ansible.builtin.set_fact:
-            # Цель: общий объем памяти (RAM + Swap) должен быть 16 ГБ (16384 МБ)
             required_swap_mb: "{{ 16384 - ansible_facts['memtotal_mb'] }}"
 
         - name: Создание файла подкачки
@@ -43,6 +43,8 @@
 
         - name: Включение файла подкачки
           ansible.builtin.command: swapon /swapfile
+          changed_when: false
+          failed_when: false
           when: "'/swapfile' not in (ansible_swaps | default([])) and (ansible_facts['memtotal_mb'] + ansible_facts['swaptotal_mb']) < 16384"
 
         - name: Добавление файла подкачки в /etc/fstab
@@ -54,13 +56,10 @@
             state: present
           when: (ansible_facts['memtotal_mb'] + ansible_facts['swaptotal_mb']) < 16384
 
-      when: ansible_facts['memtotal_mb'] < 16384
-
     # ======================================================
     # == ТЕГ: install - Установка зависимостей
     # ======================================================
     - name: Ensure dependencies are installed (for Docker)
-      tags: [install]
       ansible.builtin.apt:
         name:
           - ca-certificates
@@ -69,33 +68,33 @@
         state: present
         update_cache: true
       when: ansible_facts['os_family'] == "Debian"
+      tags: [install]
 
     - name: Create directory for Docker GPG key
-      tags: [install]
       ansible.builtin.file:
         path: /etc/apt/keyrings
         state: directory
         mode: "0755"
       when: ansible_facts['os_family'] == "Debian"
+      tags: [install]
 
     - name: Add Docker's official GPG key
-      tags: [install]
       ansible.builtin.get_url:
         url: https://download.docker.com/linux/ubuntu/gpg
         dest: /etc/apt/keyrings/docker.asc
         mode: "0644"
         force: true
       when: ansible_facts['os_family'] == "Debian"
+      tags: [install]
 
     - name: Add Docker repository
-      tags: [install]
       ansible.builtin.apt_repository:
         repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_facts['lsb']['codename'] }} stable"
         state: present
       when: ansible_facts['os_family'] == "Debian"
+      tags: [install]
 
     - name: Install Docker Engine and Python SDK for Docker
-      tags: [install]
       ansible.builtin.apt:
         name:
           - docker-ce
@@ -107,12 +106,12 @@
         state: present
         update_cache: true
       when: ansible_facts['os_family'] == "Debian"
+      tags: [install]
 
     # ======================================================
     # == ТЕГ: update, start - Запуск/обновление контейнера
     # ======================================================
     - name: Create and start the nexus container
-      tags: [start, update]
       community.docker.docker_container:
         name: "{{ container_name }}"
         image: "{{ docker_image }}"
@@ -126,24 +125,25 @@
         restart_policy: always
         memory: "{{ memory | default(omit) }}"
         cpus: "{{ cpus | default(omit) }}"
+      tags: [start, update]
 
     # ======================================================
     # == ТЕГ: stop - Остановка и удаление контейнера
     # ======================================================
     - name: Stop and remove the nexus container
-      tags: [stop]
       community.docker.docker_container:
         name: "{{ container_name }}"
         state: absent
+      tags: [stop]
 
     # ======================================================
     # == ТЕГ: attach - Подключение к интерфейсу
     # ======================================================
     - name: Show command to attach to the container
-      tags: [attach]
       ansible.builtin.debug:
         msg:
           - "To attach to the container's interface, run this command on your local machine:"
           - "ssh {{ ansible_user }}@{{ inventory_hostname }} -t 'docker attach {{ container_name }}'"
           - "IMPORTANT: To detach without stopping the container, press Ctrl+P, then Ctrl+Q"
       changed_when: false
+      tags: [attach]

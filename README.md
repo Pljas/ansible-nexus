@@ -14,11 +14,13 @@
 ### 1. Установка Python
 
 **Linux (Ubuntu/Debian):**
+
 ```bash
 sudo apt update && sudo apt install -y python3 python3-pip
 ```
 
 **macOS (через Homebrew):**
+
 ```bash
 brew install python3
 ```
@@ -28,6 +30,7 @@ brew install python3
 ```bash
 pip3 install ansible
 ```
+
 Для получения более подробной информации обратитесь к [официальной документации по установке Ansible](https://docs.ansible.com/ansible/latest/installation_guide/index.html).
 
 ### 3. Установка коллекций Ansible
@@ -45,11 +48,13 @@ ansible-galaxy collection install -r requirements.yml
 Для безопасного подключения к серверам рекомендуется использовать SSH-ключи.
 
 **Создание ключа:**
+
 ```bash
 ssh-keygen -t ed25519 -C "your_email@example.com"
 ```
 
 **Копирование ключа на сервер:**
+
 ```bash
 ssh-copy-id -i ~/.ssh/id_ed25519.pub user@server_ip
 ```
@@ -68,6 +73,7 @@ ssh-copy-id -i ~/.ssh/id_ed25519.pub user@server_ip
 ```
 
 **Параметры:**
+
 - `192.168.1.100`: IP-адрес вашего сервера.
 - `ansible_user`: Пользователь для подключения (`root`, `ubuntu` и т.д.).
 - `node_id`: Уникальный идентификатор вашей ноды Nexus.
@@ -92,21 +98,25 @@ ssh-copy-id -i ~/.ssh/id_ed25519.pub user@server_ip
 ### Команды
 
 **Полная установка и запуск:**
+
 ```bash
 ansible-playbook playbook.yml --tags "system,install,start"
 ```
 
 **Обновление контейнера:**
+
 ```bash
 ansible-playbook playbook.yml --tags "update"
 ```
 
 **Обновление до конкретной версии:**
+
 ```bash
 ansible-playbook playbook.yml --tags "update" --extra-vars "nexus_version=1.2.3"
 ```
 
 **Остановка и удаление контейнера:**
+
 ```bash
 ansible-playbook playbook.yml --tags "stop"
 ```
@@ -119,25 +129,30 @@ ansible-playbook playbook.yml --tags "stop"
 ## Устранение неисправностей
 
 ### Ошибка: `couldn't resolve module/action`
+
 Это означает, что необходимые коллекции Ansible не установлены.
 **Решение:**
+
 ```bash
 ansible-galaxy collection install -r requirements.yml
 ```
 
 ### Ошибка: `'ansible_swaps' is undefined`
+
 Возникает, если на сервере отсутствует файл подкачки. Плейбук уже содержит логику для обработки этого случая, но если ошибка все же появляется, убедитесь, что у вас последняя версия плейбука.
 
 ### Предупреждение: `world writable directory`
+
 Проблема с правами доступа к директории проекта.
 **Решение:**
+
 ```bash
 chmod o-w /path/to/your/project
 ```
 
 ## Структура проекта
 
-```
+```text
 ansible-nexus/
 ├── ansible.cfg          # Конфигурация Ansible
 ├── inventory            # Список серверов и их переменные
